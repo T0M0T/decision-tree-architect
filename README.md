@@ -8,6 +8,7 @@ A powerful visual editor for designing, simulating, and verifying decision trees
 *   **Auto Layout**: Intelligent layout algorithm to organize your tree automatically.
 *   **Variable Management**: Define boolean, integer, and float variables for your logic.
 *   **Simulation**: Run test cases against your tree to verify logic paths.
+*   **State Analysis**: Inspect variable states at any point in the tree with the new Inspector Panel.
 *   **Model Checker**: Verify invariants and check for unreachable states or conflicting paths.
 *   **Code Generation**: Export your decision tree to C++ code.
 *   **Import/Export**: Save and load your projects as YAML files.

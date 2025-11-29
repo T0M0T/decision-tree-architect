@@ -144,15 +144,6 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
             </div>
 
             <Handle
-                type="target"
-                position={Position.Top}
-                id="in"
-                className="w-3 h-3 bg-blue-400"
-                isConnectable={true}
-                style={{ zIndex: 10 }}
-            />
-
-            <Handle
                 type="source"
                 position={Position.Right}
                 id="yes"
@@ -175,6 +166,15 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
             <div className="absolute left-6 top-1/2 -translate-y-1/2 text-xs text-red-400 font-semibold pointer-events-none">
                 No
             </div>
+
+            <Handle
+                type="target"
+                position={Position.Top}
+                id="in"
+                className="w-3 h-3 bg-blue-400"
+                isConnectable={true}
+                style={{ zIndex: 50 }}
+            />
         </div>
     );
 });

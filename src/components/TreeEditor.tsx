@@ -24,6 +24,7 @@ import { useStore } from '../store/useStore';
 import { RootNode } from './nodes/RootNode';
 import { DecisionNode } from './nodes/DecisionNode';
 import { LeafNode } from './nodes/LeafNode';
+import { InspectorPanel } from './InspectorPanel';
 
 const nodeTypes = {
     root: RootNode,
@@ -237,6 +238,8 @@ const TreeEditor = () => {
 
     const { screenToFlowPosition, deleteElements, fitView } = useReactFlow();
     const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
+    const [selectedEdges, setSelectedEdges] = useState<Edge[]>([]);
+    const [showInspector, setShowInspector] = useState(true);
     const [showHelp, setShowHelp] = useState(false);
 
     // History management
@@ -245,8 +248,10 @@ const TreeEditor = () => {
     const isUndoingRedoing = useRef(false);
 
     useOnSelectionChange({
-        onChange: ({ nodes }) => {
+        onChange: ({ nodes, edges }) => {
             setSelectedNodes(nodes);
+            setSelectedEdges(edges);
+            if (nodes.length > 0 || edges.length > 0) setShowInspector(true);
         },
     });
 
@@ -348,8 +353,7 @@ const TreeEditor = () => {
     const isValidConnection = useCallback((connection: Connection | Edge) => {
         if (connection.source === connection.target) return false;
 
-        const hasIncomingEdge = edges.some(e => e.target === connection.target);
-        if (hasIncomingEdge) return false;
+        // Allow merging by removing the incoming edge check
 
         const hasOutgoingEdgeFromHandle = edges.some(e =>
             e.source === connection.source &&
@@ -631,6 +635,13 @@ const TreeEditor = () => {
                         </div>
                     )}
                 </Panel>
+                {showInspector && (
+                    <InspectorPanel
+                        selectedNodes={selectedNodes}
+                        selectedEdges={selectedEdges}
+                        onClose={() => setShowInspector(false)}
+                    />
+                )}
             </ReactFlow>
         </div>
     );
