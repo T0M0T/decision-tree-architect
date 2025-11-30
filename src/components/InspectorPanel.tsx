@@ -33,6 +33,12 @@ export const InspectorPanel = ({ selectedNodes, selectedEdges, onClose }: Inspec
         if (selectedNodes.length > 0) {
             const node = selectedNodes[0];
             const state = calculateNodeState(node.id, nodes, edges, variables);
+            if (!state) {
+                return {
+                    title: `Node Analysis: ${node.data.label || node.data.nodeId}`,
+                    lines: ['Unreachable Node']
+                };
+            }
             return {
                 title: `Node Analysis: ${node.data.label || node.data.nodeId}`,
                 lines: formatState(state, variables)
@@ -43,6 +49,14 @@ export const InspectorPanel = ({ selectedNodes, selectedEdges, onClose }: Inspec
 
             // Calculate state at source
             const sourceState = calculateNodeState(edge.source, nodes, edges, variables);
+
+            if (!sourceState) {
+                return {
+                    title: `Edge Analysis`,
+                    subtitle: `From ${sourceNode?.data.nodeId || 'Unknown'} (${edge.sourceHandle})`,
+                    lines: ['Unreachable Path']
+                };
+            }
 
             // Apply edge constraint
             // We need to replicate the logic from stateAnalysis

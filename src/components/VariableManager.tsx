@@ -146,7 +146,15 @@ export const VariableManager: React.FC = () => {
                     <p className="text-gray-500 text-center py-4 text-sm">No variables defined.</p>
                 )}
                 {variables.map((v) => (
-                    <div key={v.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded border border-gray-700 hover:border-gray-600 transition-colors">
+                    <div
+                        key={v.id}
+                        className="flex items-center justify-between p-3 bg-gray-700/50 rounded border border-gray-700 hover:border-gray-600 transition-colors cursor-grab active:cursor-grabbing"
+                        draggable
+                        onDragStart={(e) => {
+                            e.dataTransfer.setData('application/reactflow/variable', v.name);
+                            e.dataTransfer.effectAllowed = 'copy';
+                        }}
+                    >
                         <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                                 <span className="font-medium text-white">{v.name}</span>

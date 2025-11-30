@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import {
     ReactFlow,
     Background,
@@ -25,6 +25,7 @@ import { RootNode } from './nodes/RootNode';
 import { DecisionNode } from './nodes/DecisionNode';
 import { LeafNode } from './nodes/LeafNode';
 import { InspectorPanel } from './InspectorPanel';
+import { analyzeReachability } from '../utils/stateAnalysis';
 
 const nodeTypes = {
     root: RootNode,
@@ -233,7 +234,8 @@ const TreeEditor = () => {
         invariants,
         testCases,
         simulationResults,
-        modelCheckerResults
+        modelCheckerResults,
+        activeSimulationId
     } = useStore();
 
     const { screenToFlowPosition, deleteElements, fitView } = useReactFlow();
@@ -241,6 +243,7 @@ const TreeEditor = () => {
     const [selectedEdges, setSelectedEdges] = useState<Edge[]>([]);
     const [showInspector, setShowInspector] = useState(true);
     const [showHelp, setShowHelp] = useState(false);
+    const [unreachableNodeIds, setUnreachableNodeIds] = useState<Set<string>>(new Set());
 
     // History management
     const { takeSnapshot, undo, redo, canUndo, canRedo } = useHistory(initialNodes, []);
@@ -254,6 +257,71 @@ const TreeEditor = () => {
             if (nodes.length > 0 || edges.length > 0) setShowInspector(true);
         },
     });
+
+    // Reachability Analysis Effect
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (nodes.length === 0) return;
+            const reachable = analyzeReachability(nodes, edges, variables);
+            const unreachable = new Set<string>();
+            nodes.forEach(n => {
+                if (!reachable.has(n.id) && n.type !== 'root') { // Root is always reachable (start)
+                    unreachable.add(n.id);
+                }
+            });
+            setUnreachableNodeIds(unreachable);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [nodes, edges, variables]);
+
+    const displayNodes = useMemo(() => {
+        // Base nodes with reachability info
+        const nodesWithReachability = nodes.map(node => ({
+            ...node,
+            data: {
+                ...node.data,
+                isUnreachable: unreachableNodeIds.has(node.id)
+            }
+        }));
+
+        if (!activeSimulationId || !simulationResults[activeSimulationId]) return nodesWithReachability;
+
+        const result = simulationResults[activeSimulationId];
+        const nodeIds = result.nodeIds instanceof Set ? result.nodeIds : new Set(result.nodeIds);
+
+        return nodesWithReachability.map(node => {
+            const isVisited = nodeIds.has(node.id);
+            return {
+                ...node,
+                style: {
+                    ...node.style,
+                    opacity: isVisited ? 1 : 0.2,
+                    filter: isVisited ? 'none' : 'grayscale(100%)',
+                    transition: 'all 0.3s ease'
+                }
+            };
+        });
+    }, [nodes, activeSimulationId, simulationResults, unreachableNodeIds]);
+
+    const displayEdges = useMemo(() => {
+        if (!activeSimulationId || !simulationResults[activeSimulationId]) return edges;
+        const result = simulationResults[activeSimulationId];
+        const edgeIds = result.edgeIds instanceof Set ? result.edgeIds : new Set(result.edgeIds);
+
+        return edges.map(edge => {
+            const isVisited = edgeIds.has(edge.id);
+            return {
+                ...edge,
+                style: {
+                    ...edge.style,
+                    stroke: isVisited ? (edge.style?.stroke || '#b1b1b7') : '#4b5563',
+                    strokeWidth: isVisited ? 3 : 1,
+                    opacity: isVisited ? 1 : 0.2,
+                },
+                animated: isVisited,
+            };
+        });
+    }, [edges, activeSimulationId, simulationResults]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         onNodesChange(changes);
@@ -468,18 +536,43 @@ const TreeEditor = () => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement).tagName)) return;
 
-            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-                if (event.shiftKey) {
-                    handleRedo();
-                } else {
-                    handleUndo();
+            if (event.ctrlKey || event.metaKey) {
+                switch (event.key.toLowerCase()) {
+                    case 'z':
+                        if (event.shiftKey) handleRedo();
+                        else handleUndo();
+                        event.preventDefault();
+                        break;
+                    case 'y':
+                        handleRedo();
+                        event.preventDefault();
+                        break;
+                    case 's':
+                        event.preventDefault();
+                        window.dispatchEvent(new CustomEvent('export-tree'));
+                        break;
+                    case 'o':
+                        event.preventDefault();
+                        document.getElementById('import-file-input')?.click();
+                        break;
+                    case 'd':
+                        event.preventDefault();
+                        if (selectedNodes.length > 0) {
+                            const newNodes = selectedNodes.filter(n => n.type !== 'root').map(node => ({
+                                ...node,
+                                id: `${node.type}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                position: { x: node.position.x + 20, y: node.position.y + 20 },
+                                data: { ...node.data, nodeId: `${node.data.nodeId}_copy` },
+                                selected: true
+                            }));
+                            if (newNodes.length > 0) {
+                                const updatedNodes = nodes.map(n => ({ ...n, selected: false })).concat(newNodes);
+                                setNodes(updatedNodes);
+                                setSelectedNodes(newNodes);
+                            }
+                        }
+                        break;
                 }
-                event.preventDefault();
-                return;
-            }
-            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
-                handleRedo();
-                event.preventDefault();
                 return;
             }
 
@@ -501,15 +594,29 @@ const TreeEditor = () => {
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [addDecisionNode, addLeafNode, handleDelete, handleUndo, handleRedo]);
+    }, [addDecisionNode, addLeafNode, handleDelete, handleUndo, handleRedo, selectedNodes, setNodes, nodes]);
 
     const canDelete = selectedNodes.length > 0 && selectedNodes.some(n => n.deletable !== false);
 
     return (
         <div style={{ width: '100%', height: '100%' }}>
+            <input
+                type="file"
+                id="import-file-input"
+                className="hidden"
+                accept=".yaml,.yml"
+                onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                        const file = e.target.files[0];
+                        const event = new CustomEvent('import-tree', { detail: { file } });
+                        window.dispatchEvent(event);
+                        e.target.value = '';
+                    }
+                }}
+            />
             <ReactFlow
-                nodes={nodes}
-                edges={edges}
+                nodes={displayNodes}
+                edges={displayEdges}
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}
                 onConnect={onConnect}

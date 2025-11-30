@@ -131,11 +131,12 @@ export const SimulationPanel = () => {
         updateTestCase,
         removeTestCase,
         setSimulationResults,
-        setTestCases
+        setTestCases,
+        activeSimulationId,
+        setActiveSimulationId
     } = useStore();
 
     // State
-    const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
     const [isRunning, setIsRunning] = useState(false);
 
     // Modal State
@@ -162,9 +163,9 @@ export const SimulationPanel = () => {
                 values: getDefaultValues()
             };
             setTestCases([newCase]);
-            setActiveCaseId(newCase.id);
-        } else if (testCases.length > 0 && !activeCaseId) {
-            setActiveCaseId(testCases[0].id);
+            setActiveSimulationId(newCase.id);
+        } else if (testCases.length > 0 && !activeSimulationId) {
+            setActiveSimulationId(testCases[0].id);
         }
     }, [variables, testCases.length]); // Only run when variables change or testCases becomes empty
 
@@ -195,7 +196,7 @@ export const SimulationPanel = () => {
                 values
             };
             addTestCase(newCase);
-            setActiveCaseId(newCase.id);
+            setActiveSimulationId(newCase.id);
         }
         setIsModalOpen(false);
     };
@@ -203,9 +204,9 @@ export const SimulationPanel = () => {
     const handleRemoveCase = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         removeTestCase(id);
-        if (activeCaseId === id) {
+        if (activeSimulationId === id) {
             const remaining = testCases.filter(tc => tc.id !== id);
-            setActiveCaseId(remaining.length > 0 ? remaining[0].id : null);
+            setActiveSimulationId(remaining.length > 0 ? remaining[0].id : null);
         }
     };
 
@@ -324,10 +325,10 @@ export const SimulationPanel = () => {
             ...simulationResults,
             [tc.id]: result
         });
-        setActiveCaseId(tc.id);
+        setActiveSimulationId(tc.id);
     };
 
-    const activeResult = activeCaseId ? simulationResults[activeCaseId] : null;
+    const activeResult = activeSimulationId ? simulationResults[activeSimulationId] : null;
 
     // Prepare nodes and edges for display with highlighting
     const displayNodes = useMemo(() => {
@@ -407,8 +408,8 @@ export const SimulationPanel = () => {
                             return (
                                 <div
                                     key={tc.id}
-                                    onClick={() => setActiveCaseId(tc.id)}
-                                    className={`group flex items-center justify-between p-2 rounded cursor-pointer border transition-all ${activeCaseId === tc.id
+                                    onClick={() => setActiveSimulationId(tc.id)}
+                                    className={`group flex items-center justify-between p-2 rounded cursor-pointer border transition-all ${activeSimulationId === tc.id
                                         ? 'bg-blue-900/30 border-blue-500'
                                         : 'bg-gray-800 border-gray-700 hover:bg-gray-700'
                                         }`}

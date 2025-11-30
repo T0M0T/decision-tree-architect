@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2025-11-30
+
+### Added
+- **Simulation Coverage Visualization**: Heatmap-style visualization of covered paths and nodes during simulation.
+- **Real-time Reachability Analysis**: Visual warnings for unreachable nodes and paths.
+- **Drag & Drop Variable Insertion**: Drag variables from the sidebar directly into decision node expressions.
+- **Expanded Keyboard Shortcuts**: Added shortcuts for Save (Ctrl+S), Open (Ctrl+O), and Duplicate (Ctrl+D).
+
 ## [1.1.0] - 2025-11-30
 
 ### Added

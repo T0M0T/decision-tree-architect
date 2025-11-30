@@ -20,6 +20,7 @@ interface AppState {
     // Simulation State
     testCases: TestCase[];
     simulationResults: Record<string, SimulationResult>;
+    activeSimulationId: string | null;
 
     // Model Checker State
     modelCheckerResults: ModelCheckerResult[];
@@ -47,6 +48,7 @@ interface AppState {
     updateTestCase: (id: string, testCase: Partial<TestCase>) => void;
     removeTestCase: (id: string) => void;
     setSimulationResults: (results: Record<string, SimulationResult>) => void;
+    setActiveSimulationId: (id: string | null) => void;
 
     // Model Checker Actions
     setModelCheckerResults: (results: ModelCheckerResult[]) => void;
@@ -59,6 +61,7 @@ export const useStore = create<AppState>((set, get) => ({
     edges: [],
     testCases: [],
     simulationResults: {},
+    activeSimulationId: null,
     modelCheckerResults: [],
 
     setNodes: (nodes) => set({ nodes }),
@@ -136,6 +139,7 @@ export const useStore = create<AppState>((set, get) => ({
     })),
 
     setSimulationResults: (results) => set({ simulationResults: results }),
+    setActiveSimulationId: (id) => set({ activeSimulationId: id }),
 
     setModelCheckerResults: (results) => set({ modelCheckerResults: results }),
 }));

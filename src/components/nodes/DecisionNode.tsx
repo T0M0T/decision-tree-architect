@@ -43,6 +43,11 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
                 <div className="absolute -top-3 -left-3 bg-blue-900 text-white text-xs font-bold px-2 py-0.5 rounded-full border border-blue-400 shadow-sm z-20">
                     {String(data.nodeId || id)}
                 </div>
+                {data.isUnreachable && (
+                    <div className="absolute -top-3 -right-3 bg-red-900 text-red-200 p-1 rounded-full border border-red-500 shadow-sm z-30" title="Unreachable Node">
+                        <AlertCircle size={14} />
+                    </div>
+                )}
                 {isEditing ? (
                     <input
                         type="text"
@@ -69,6 +74,17 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
                             onChange={(e) => {
                                 setExpression(e.target.value);
                                 setError(null);
+                            }}
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = 'copy';
+                            }}
+                            onDrop={(e) => {
+                                e.preventDefault();
+                                const varName = e.dataTransfer.getData('application/reactflow/variable');
+                                if (varName) {
+                                    insertVariable(varName);
+                                }
                             }}
                             placeholder="e.g., A == HIGH && B == LOW"
                             className={`w-full bg-gray-800 border rounded px-2 py-1 text-white text-xs font-mono h-16 focus:outline-none ${error ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-blue-400'

@@ -129,7 +129,7 @@ export const calculateNodeState = (
     nodes: Node[],
     edges: Edge[],
     variables: Variable[]
-): NodeState => {
+): NodeState | null => {
     // 1. Find Root
     const root = nodes.find(n => n.type === 'root');
     if (!root) return {};
@@ -168,7 +168,7 @@ export const calculateNodeState = (
             });
             return initialState;
         }
-        return {}; // Unreachable
+        return null; // Unreachable
     }
 
     // 3. Calculate state for each path
@@ -202,7 +202,29 @@ export const calculateNodeState = (
         return Object.values(state).every(v => v.possibleValues.size > 0);
     });
 
+    if (validStates.length === 0) return null; // All paths are contradictory
+
     return mergeStates(validStates);
+};
+
+export const analyzeReachability = (
+    nodes: Node[],
+    edges: Edge[],
+    variables: Variable[]
+): Set<string> => {
+    const reachableNodes = new Set<string>();
+
+    // Optimization: If no variables, just check graph connectivity?
+    // But we want to support "always false" conditions too.
+
+    for (const node of nodes) {
+        const state = calculateNodeState(node.id, nodes, edges, variables);
+        if (state !== null) {
+            reachableNodes.add(node.id);
+        }
+    }
+
+    return reachableNodes;
 };
 
 export const formatState = (state: NodeState, variables: Variable[]): string[] => {
