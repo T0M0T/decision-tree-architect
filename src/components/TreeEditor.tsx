@@ -17,7 +17,7 @@ import {
     useOnSelectionChange
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Plus, Trash2, X, Layout, Undo, Redo, RefreshCw, HelpCircle, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, X, Layout, Undo, Redo, HelpCircle, CheckCircle } from 'lucide-react';
 import { exportStateToYAML, importStateFromYAML } from './ImportExport';
 import { useStore } from '../store/useStore';
 
