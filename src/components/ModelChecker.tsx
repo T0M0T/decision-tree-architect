@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import { Node } from '@xyflow/react';
 import { Plus, Trash2, AlertTriangle, ChevronDown, Info, Edit, X, RefreshCw, Activity } from 'lucide-react';
 import { Invariant, Variable } from '../types';
+import { getCompletionSuggestion, isValidIdentifier } from '../utils/expressionUtils';
 
 // Searchable Dropdown Component
 const SearchableSelect = ({
@@ -63,9 +64,9 @@ const SearchableSelect = ({
                         onClick={e => e.stopPropagation()}
                     />
                     {filteredOptions.length > 0 ? (
-                        filteredOptions.map(opt => (
+                        filteredOptions.map((opt, index) => (
                             <div
-                                key={opt.value}
+                                key={`${opt.value}-${index}`}
                                 className={`px-3 py-2 cursor-pointer text-sm flex items-center justify-between ${opt.value === value ? 'bg-purple-900/50 text-purple-200' : 'text-gray-300 hover:bg-gray-700'}`}
                                 onClick={() => {
                                     onChange(opt.value);
@@ -178,6 +179,16 @@ export const ModelChecker = () => {
     const [isInvariantsOpen, setIsInvariantsOpen] = useState(true);
     const [selectedViolation, setSelectedViolation] = useState<Invariant | null>(null);
 
+    // Ghost text state
+    const [suggestion, setSuggestion] = useState<string>('');
+    const [cursorPos, setCursorPos] = useState<number>(0);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Calculate suggestion
+    useEffect(() => {
+        setSuggestion(getCompletionSuggestion(newInvariantCondition, cursorPos, variables));
+    }, [newInvariantCondition, cursorPos, variables]);
+
     // Validation Logic
     const validateCondition = (condition: string) => {
         if (!condition.trim()) {
@@ -209,9 +220,36 @@ export const ModelChecker = () => {
         setValidationError(null);
     };
 
-    const handleConditionChange = (val: string) => {
+    const handleConditionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
         setNewInvariantCondition(val);
+        setCursorPos(e.target.selectionStart || 0);
         validateCondition(val);
+    };
+
+    const handleSelect = (e: React.SyntheticEvent<HTMLInputElement>) => {
+        setCursorPos(e.currentTarget.selectionStart || 0);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Tab') {
+            if (suggestion) {
+                e.preventDefault();
+                const newValue = newInvariantCondition.slice(0, cursorPos) + suggestion + newInvariantCondition.slice(cursorPos);
+                setNewInvariantCondition(newValue);
+                const newCursorPos = cursorPos + suggestion.length;
+                setCursorPos(newCursorPos);
+                setSuggestion('');
+
+                setTimeout(() => {
+                    if (inputRef.current) {
+                        inputRef.current.selectionStart = inputRef.current.selectionEnd = newCursorPos;
+                    }
+                }, 0);
+
+                validateCondition(newValue);
+            }
+        }
     };
 
     // 1. Generate all combinations of variable values
@@ -259,6 +297,9 @@ export const ModelChecker = () => {
         let steps = 0;
         const MAX_STEPS = 100;
 
+        // Filter valid identifiers for enum values
+        const validEnumValues = allEnumValues.filter(isValidIdentifier);
+
         while (currentNode && steps < MAX_STEPS) {
             if (visited.has(currentNode.id)) return { result: 'Error: Loop Detected', display: 'Error: Loop Detected' };
             visited.add(currentNode.id);
@@ -285,8 +326,8 @@ export const ModelChecker = () => {
                 let result = false;
                 try {
                     const keys = Object.keys(context);
-                    const argNames = [...keys, ...allEnumValues];
-                    const argValues = [...keys.map(k => context[k]), ...allEnumValues];
+                    const argNames = [...keys, ...validEnumValues];
+                    const argValues = [...keys.map(k => context[k]), ...validEnumValues];
                     const func = new Function(...argNames, `return ${expression};`);
                     result = func(...argValues);
                 } catch (e) {
@@ -312,15 +353,25 @@ export const ModelChecker = () => {
     const leafNodes = useMemo(() => nodes.filter(n => n.type === 'leaf'), [nodes]);
 
     // Options for the dropdown
-    const leafOptions = useMemo(() => leafNodes.map(node => ({
-        value: (node.data.nodeId as string) || 'Unknown',
-        label: `${node.data.nodeId || 'Unknown'} (${node.data.label || 'Leaf'})`
-    })), [leafNodes]);
+    const leafOptions = useMemo(() => {
+        const uniqueMap = new Map();
+        leafNodes.forEach(node => {
+            const value = (node.data.nodeId as string) || 'Unknown';
+            if (!uniqueMap.has(value)) {
+                uniqueMap.set(value, {
+                    value,
+                    label: `${value} (${node.data.label || 'Leaf'})`
+                });
+            }
+        });
+        return Array.from(uniqueMap.values());
+    }, [leafNodes]);
 
     const checkInvariants = useMemo(() => (context: Record<string, string>, result: string): Invariant[] => {
         const violations: Invariant[] = [];
-        const argNames = [...Object.keys(context), ...allEnumValues];
-        const argValues = [...Object.values(context), ...allEnumValues];
+        const validEnumValues = allEnumValues.filter(isValidIdentifier);
+        const argNames = [...Object.keys(context), ...validEnumValues];
+        const argValues = [...Object.values(context), ...validEnumValues];
 
         invariants.forEach(inv => {
             try {
@@ -482,13 +533,31 @@ export const ModelChecker = () => {
                                     onChange={e => setNewInvariantName(e.target.value)}
                                 />
                                 <span className="text-gray-400 text-sm">If</span>
-                                <input
-                                    type="text"
-                                    placeholder="Condition (e.g. Temp == 'HIGH')"
-                                    className={`bg-gray-900 border rounded px-3 py-2 text-sm flex-1 min-w-[200px] focus:outline-none ${validationError ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-purple-500'}`}
-                                    value={newInvariantCondition}
-                                    onChange={e => handleConditionChange(e.target.value)}
-                                />
+
+                                <div className="relative flex-1 min-w-[200px]">
+                                    {/* Ghost Text Layer */}
+                                    <div
+                                        className="absolute inset-0 px-3 py-2 text-sm font-mono whitespace-pre-wrap break-all border border-transparent pointer-events-none bg-transparent"
+                                        aria-hidden="true"
+                                    >
+                                        <span className="opacity-0">{newInvariantCondition.slice(0, cursorPos)}</span>
+                                        <span className="text-gray-500">{suggestion}</span>
+                                        <span className="opacity-0">{newInvariantCondition.slice(cursorPos)}</span>
+                                    </div>
+
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        placeholder="Condition (e.g. Temp == 'HIGH')"
+                                        className={`w-full bg-transparent border rounded px-3 py-2 text-sm font-mono focus:outline-none relative z-10 ${validationError ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-purple-500'}`}
+                                        value={newInvariantCondition}
+                                        onChange={handleConditionChange}
+                                        onKeyDown={handleKeyDown}
+                                        onSelect={handleSelect}
+                                        spellCheck={false}
+                                    />
+                                </div>
+
                                 <span className="text-gray-400 text-sm">Then Result is</span>
 
                                 <SearchableSelect
@@ -532,154 +601,133 @@ export const ModelChecker = () => {
                             )}
                         </div>
 
-                        {invariants.length > 0 && (
-                            <div className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                                {invariants.map(inv => (
-                                    <div key={inv.id} className={`flex items-center justify-between bg-gray-900/50 p-2 rounded border text-sm transition-colors ${editingId === inv.id ? 'border-purple-500 bg-purple-900/20' : 'border-gray-700 hover:bg-gray-900'}`}>
-                                        <div className="flex-1 flex items-center gap-2">
-                                            <span className="font-semibold text-purple-300">{inv.name}:</span>
-                                            <span className="text-gray-400">If</span>
-                                            <code className="text-blue-300 bg-gray-800 px-1 rounded">{inv.condition}</code>
-                                            <span className="text-gray-400">Then</span>
-                                            <code className="text-green-400 bg-gray-800 px-1 rounded">{inv.expectedResult}</code>
+                        <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                            {invariants.map(inv => (
+                                <div key={inv.id} className="bg-gray-900/50 p-3 rounded border border-gray-700 flex items-center justify-between group hover:border-gray-600 transition-colors">
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="font-bold text-sm text-white">{inv.name}</span>
+                                            <span className="text-xs text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">ID: {inv.id.slice(0, 4)}</span>
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => handleEdit(inv)}
-                                                className="text-gray-500 hover:text-blue-400 p-1 transition-colors"
-                                                title="Edit"
-                                                disabled={!!editingId}
-                                            >
-                                                <Edit size={14} />
-                                            </button>
-                                            <button
-                                                onClick={() => removeInvariant(inv.id)}
-                                                className="text-gray-500 hover:text-red-400 p-1 transition-colors"
-                                                title="Delete"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
+                                        <div className="text-xs text-gray-400 font-mono">
+                                            If <span className="text-blue-300">{inv.condition}</span> then <span className="text-green-300">{inv.expectedResult}</span>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        )}
+                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={() => handleEdit(inv)}
+                                            className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded transition-colors"
+                                            title="Edit Invariant"
+                                        >
+                                            <Edit size={14} />
+                                        </button>
+                                        <button
+                                            onClick={() => removeInvariant(inv.id)}
+                                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                            title="Delete Invariant"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {invariants.length === 0 && (
+                                <div className="text-gray-500 text-sm italic text-center py-4">
+                                    No invariants defined. Add one above to check for safety properties.
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
 
-            {/* Analysis Section */}
-            <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex items-center justify-between mb-4 shrink-0 bg-gray-800 p-4 rounded-lg border border-gray-700">
-                    <div>
-                        <h2 className="text-xl font-bold text-blue-400 flex items-center gap-2">
-                            <Activity size={20} />
-                            Model Checking
-                        </h2>
-                        {modelCheckerResults.length > 0 ? (
-                            <p className="text-xs text-gray-400 mt-1">
-                                <span className="text-green-400 font-bold">Live Analysis:</span> Invariants are checked automatically.
-                                Only regenerate if Variables or Tree Logic changes.
-                            </p>
-                        ) : (
-                            <p className="text-xs text-gray-400 mt-1">
-                                Generates all possible variable combinations to verify safety.
-                                <span className="text-orange-400 ml-1">Computationally expensive for many variables.</span>
-                            </p>
-                        )}
-                    </div>
-
+            {/* Results Section */}
+            <div className="flex-1 bg-gray-800 rounded-lg border border-gray-700 flex flex-col min-h-0">
+                <div className="p-4 border-b border-gray-700 flex items-center justify-between shrink-0">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Activity size={18} className="text-blue-400" />
+                        Model Checker Results
+                    </h3>
                     <button
                         onClick={handleRun}
-                        disabled={variables.length === 0 || isRunning}
-                        className={`flex items-center gap-2 px-4 py-2 rounded font-bold transition-all text-sm ${variables.length === 0
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                            : modelCheckerResults.length > 0
-                                ? 'bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600 hover:border-gray-500'
-                                : 'bg-green-600 hover:bg-green-500 text-white shadow-lg hover:shadow-green-500/20'
-                            }`}
+                        disabled={isRunning || variables.length === 0}
+                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors shadow-lg shadow-blue-900/20"
                     >
                         <RefreshCw size={16} className={isRunning ? 'animate-spin' : ''} />
-                        {isRunning ? 'Generating...' : modelCheckerResults.length > 0 ? 'Regenerate State Space' : 'Generate State Space'}
+                        {isRunning ? 'Checking...' : 'Run Check'}
                     </button>
                 </div>
 
-                {variables.length === 0 ? (
-                    <div className="text-gray-400 italic p-4">No variables defined. Add variables to perform model checking.</div>
-                ) : displayResults.length === 0 ? (
-                    <div className="flex-1 flex flex-col items-center justify-center border border-gray-700 rounded-lg bg-gray-800/30 text-gray-400 gap-2">
-                        <Activity size={48} className="opacity-20" />
-                        <p>State space not generated.</p>
-                        <p className="text-sm opacity-60">Click "Generate State Space" to begin analysis.</p>
-                    </div>
-                ) : (
-                    <div className="flex-1 overflow-auto border border-gray-700 rounded-lg shadow-xl custom-scrollbar">
+                <div className="flex-1 overflow-auto custom-scrollbar p-0">
+                    {modelCheckerResults.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2">
+                            <Activity size={48} className="opacity-20" />
+                            <p>Run the model checker to verify all possible paths.</p>
+                        </div>
+                    ) : (
                         <table className="w-full text-left border-collapse">
-                            <thead className="bg-gray-800 sticky top-0 z-10">
+                            <thead className="bg-gray-900/50 sticky top-0 z-10">
                                 <tr>
                                     {variables.map(v => (
-                                        <th key={v.id} className="p-3 border-b border-gray-700 font-semibold text-gray-300 whitespace-nowrap">
+                                        <th key={v.id} className="p-3 text-xs font-bold text-gray-400 uppercase border-b border-gray-700 whitespace-nowrap">
                                             {v.name}
                                         </th>
                                     ))}
-                                    <th className="p-3 border-b border-gray-700 font-semibold text-green-400 whitespace-nowrap">
-                                        Result (Leaf)
+                                    <th className="p-3 text-xs font-bold text-gray-400 uppercase border-b border-gray-700 whitespace-nowrap">
+                                        Result Node
                                     </th>
-                                    <th className="p-3 border-b border-gray-700 font-semibold text-red-400 whitespace-nowrap">
+                                    <th className="p-3 text-xs font-bold text-gray-400 uppercase border-b border-gray-700 whitespace-nowrap">
                                         Violations
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-800">
-                                {displayResults.map((row, idx) => {
-                                    const isError = row.result.startsWith('Error') || row.result.startsWith('Stuck');
-                                    const hasViolations = row.violations.length > 0;
-                                    return (
-                                        <tr key={idx} className={`hover:bg-gray-800/50 transition-colors ${hasViolations ? 'bg-red-900/20' : ''}`}>
-                                            {variables.map(v => (
-                                                <td key={v.id} className="p-3 text-gray-400 font-mono text-sm whitespace-nowrap">
+                            <tbody className="divide-y divide-gray-700">
+                                {displayResults.map((row, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-700/30 transition-colors group">
+                                        {variables.map(v => (
+                                            <td key={v.id} className="p-3 text-sm text-gray-300 border-r border-gray-700/50 last:border-r-0">
+                                                <span className="bg-gray-800 px-2 py-1 rounded text-xs font-mono border border-gray-700">
                                                     {row.combo[v.name]}
-                                                </td>
-                                            ))}
-                                            <td className={`p-3 font-mono text-sm font-bold whitespace-nowrap ${isError ? 'text-red-400' : 'text-green-400'}`}>
+                                                </span>
+                                            </td>
+                                        ))}
+                                        <td className="p-3 text-sm">
+                                            <span className={`font-mono font-bold ${row.result.startsWith('Error') || row.result.startsWith('Stuck') ? 'text-red-400' : 'text-green-400'}`}>
                                                 {row.display}
-                                            </td>
-                                            <td className="p-3 font-mono text-sm text-red-400 font-bold">
-                                                {hasViolations ? (
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <AlertTriangle size={14} className="text-red-500" />
-                                                        {row.violations.map((v, i) => (
-                                                            <button
-                                                                key={i}
-                                                                className="cursor-pointer bg-red-950 hover:bg-red-900 text-red-200 px-2 py-1 rounded border border-red-800 hover:border-red-600 text-xs transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setSelectedViolation(v);
-                                                                }}
-                                                            >
-                                                                <span>{v.name}</span>
-                                                                <Info size={10} className="opacity-70" />
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-gray-600">-</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                            </span>
+                                        </td>
+                                        <td className="p-3 text-sm">
+                                            {row.violations.length > 0 ? (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {row.violations.map((v, i) => (
+                                                        <span
+                                                            key={i}
+                                                            className="bg-red-900/30 text-red-400 border border-red-900/50 px-2 py-1 rounded text-xs flex items-center gap-1 cursor-pointer hover:bg-red-900/50 transition-colors"
+                                                            onClick={() => setSelectedViolation(v)}
+                                                        >
+                                                            <AlertTriangle size={12} />
+                                                            {v.name}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-600 text-xs flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500/50"></span>
+                                                    Pass
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
-                    </div>
-                )}
-
-                {displayResults.length > 0 && (
-                    <div className="mt-4 text-xs text-gray-500 shrink-0">
-                        Total States: {displayResults.length} | Violations Found: {displayResults.filter(r => r.violations.length > 0).length}
-                    </div>
-                )}
+                    )}
+                </div>
+                <div className="p-2 border-t border-gray-700 bg-gray-900/50 text-xs text-gray-500 flex justify-between px-4">
+                    <span>Total Combinations: {modelCheckerResults.length}</span>
+                    <span>Violations Found: {displayResults.filter(r => r.violations.length > 0).length}</span>
+                </div>
             </div>
-        </div>
+        </div >
     );
 };

@@ -1,6 +1,16 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+
+## [1.3.0] - 2025-12-01
+
+### Added
+- **Electron Build Support**: Added Electron Forge configuration for building standalone Windows executables.
+- **Desktop Application**: Application can now be packaged as a native desktop app (EXE) for Windows.
+- **Distribution Package**: ZIP distribution package for easy deployment.
+
+### Changed
+- Configured Electron Forge with ZIP maker for simplified build process.
+- Added `electron:start`, `electron:package`, and `electron:make` npm scripts.
 
 ## [1.2.0] - 2025-11-30
 

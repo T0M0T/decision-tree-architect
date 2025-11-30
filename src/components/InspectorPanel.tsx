@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Node, Edge } from '@xyflow/react';
 import { useStore } from '../store/useStore';
 import { calculateNodeState, formatState, NodeState } from '../utils/stateAnalysis';
+import { REGEX_COMPARISON } from '../utils/expressionUtils';
 import { X } from 'lucide-react';
 
 interface InspectorPanelProps {
@@ -73,10 +74,6 @@ export const InspectorPanel = ({ selectedNodes, selectedEdges, onClose }: Inspec
                 const isNo = edge.sourceHandle === 'no';
 
                 if (isYes || isNo) {
-                    // We need to apply the constraint
-                    // This is duplicating logic, which is bad.
-                    // But for this turn, I will duplicate the simple regex logic.
-
                     // Helper to apply
                     const apply = (s: NodeState, varName: string, op: string, val: string) => {
                         const v = variables.find(v => v.name === varName);
@@ -97,12 +94,12 @@ export const InspectorPanel = ({ selectedNodes, selectedEdges, onClose }: Inspec
                     if (isYes && expression) {
                         const parts = expression.split('&&');
                         parts.forEach(part => {
-                            const m = part.match(/([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(==|!=)\s*(.+)/);
+                            const m = part.match(REGEX_COMPARISON);
                             if (m) apply(edgeState, m[1].trim(), m[2], m[3]);
                         });
                     } else if (isNo && expression) {
                         if (!expression.includes('&&') && !expression.includes('||')) {
-                            const m = expression.match(/([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(==|!=)\s*(.+)/);
+                            const m = expression.match(REGEX_COMPARISON);
                             if (m) {
                                 const op = m[2] === '==' ? '!=' : '==';
                                 apply(edgeState, m[1].trim(), op, m[3]);

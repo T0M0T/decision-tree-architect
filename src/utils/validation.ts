@@ -91,13 +91,45 @@ export const validateExpression = (
             // Let's try to implement that logic.
 
             // Re-scanning with index to check for dot
-            const index = expression.indexOf(id);
+            // const index = expression.indexOf(id);
             // This is flawed if id appears multiple times.
 
             // Let's just return error for now. If user uses Math.max, they might complain, 
             // but for "Decision Tree" logic usually it's simple comparisons.
 
             return { isValid: false, error: `Unknown identifier: "${id}". Check variable names.` };
+        }
+    }
+
+    // 3. Enum Value Check (Type Safety)
+    // We look for patterns like "Var == Val" or "Var != Val"
+    // This is a heuristic regex-based check.
+    const comparisonRegex = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(==|!=)\s*(['"]?)([a-zA-Z0-9_$]+)\3/g;
+    let match;
+
+    // We need to reset lastIndex because we are using 'g' flag
+    while ((match = comparisonRegex.exec(expression)) !== null) {
+        const varName = match[1];
+        const value = match[4]; // The value inside quotes or the identifier
+
+        const variable = variables.find(v => v.name === varName);
+
+        if (variable && variable.type === 'enum') {
+            // Check if the value is valid for this variable
+            // We allow the value to be another variable's name? 
+            // For now, let's assume we are comparing against literals/enum values.
+
+            // If the value is actually another variable, we should probably allow it if types match?
+            // But the user specifically asked about "D == HIGH" where HIGH is an invalid value.
+
+            const isValueVariable = variables.some(v => v.name === value);
+
+            if (!isValueVariable && !variable.possibleValues.includes(value)) {
+                return {
+                    isValid: false,
+                    error: `Invalid value '${value}' for variable '${varName}'. Allowed values: ${variable.possibleValues.join(', ')}`
+                };
+            }
         }
     }
 

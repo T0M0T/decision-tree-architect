@@ -1,7 +1,8 @@
-import { memo, useState } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { useStore } from '../../store/useStore';
 import { validateExpression } from '../../utils/validation';
+import { formatExpression, getCompletionSuggestion } from '../../utils/expressionUtils';
 import { AlertCircle } from 'lucide-react';
 
 export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
@@ -10,28 +11,95 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
     const [expression, setExpression] = useState(String(data.expression || ''));
     const [isEditing, setIsEditing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Ghost text state
+    const [suggestion, setSuggestion] = useState<string>('');
+    const [cursorPos, setCursorPos] = useState<number>(0);
 
     const handleSave = () => {
         setError(null);
-        const validation = validateExpression(expression, variables);
+
+        const formattedExpression = formatExpression(expression);
+
+        const validation = validateExpression(formattedExpression, variables);
 
         if (!validation.isValid) {
             setError(validation.error || 'Invalid expression');
             return;
         }
 
-        updateNodeData(id, { label, expression });
+        setExpression(formattedExpression);
+        updateNodeData(id, { label, expression: formattedExpression });
         setIsEditing(false);
+        setSuggestion('');
     };
 
     const insertVariable = (varName: string) => {
-        setExpression(prev => prev + (prev ? ' ' : '') + varName);
+        const newExpr = expression + (expression ? ' ' : '') + varName;
+        setExpression(newExpr);
         setError(null);
+        // Focus and move cursor to end
+        setTimeout(() => {
+            if (textareaRef.current) {
+                textareaRef.current.focus();
+                textareaRef.current.selectionStart = textareaRef.current.selectionEnd = newExpr.length;
+            }
+        }, 0);
     };
 
     const insertOperator = (op: string) => {
-        setExpression(prev => prev + ' ' + op + ' ');
+        const newExpr = expression + ' ' + op + ' ';
+        setExpression(newExpr);
         setError(null);
+        setTimeout(() => {
+            if (textareaRef.current) {
+                textareaRef.current.focus();
+                textareaRef.current.selectionStart = textareaRef.current.selectionEnd = newExpr.length;
+            }
+        }, 0);
+    };
+
+    // Calculate suggestion based on current input and cursor position
+    useEffect(() => {
+        if (!isEditing) {
+            setSuggestion('');
+            return;
+        }
+        setSuggestion(getCompletionSuggestion(expression, cursorPos, variables));
+    }, [expression, cursorPos, isEditing, variables]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            if (suggestion) {
+                const newValue = expression.slice(0, cursorPos) + suggestion + expression.slice(cursorPos);
+                setExpression(newValue);
+                const newCursorPos = cursorPos + suggestion.length;
+                setCursorPos(newCursorPos);
+                setSuggestion(''); // Clear suggestion
+
+                // Move cursor
+                setTimeout(() => {
+                    if (textareaRef.current) {
+                        textareaRef.current.selectionStart = textareaRef.current.selectionEnd = newCursorPos;
+                    }
+                }, 0);
+            }
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSave();
+        }
+    };
+
+    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setExpression(e.target.value);
+        setCursorPos(e.target.selectionStart);
+        setError(null);
+    };
+
+    const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+        setCursorPos(e.currentTarget.selectionStart);
     };
 
     return (
@@ -43,7 +111,7 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
                 <div className="absolute -top-3 -left-3 bg-blue-900 text-white text-xs font-bold px-2 py-0.5 rounded-full border border-blue-400 shadow-sm z-20">
                     {String(data.nodeId || id)}
                 </div>
-                {data.isUnreachable && (
+                {!!data.isUnreachable && (
                     <div className="absolute -top-3 -right-3 bg-red-900 text-red-200 p-1 rounded-full border border-red-500 shadow-sm z-30" title="Unreachable Node">
                         <AlertCircle size={14} />
                     </div>
@@ -69,28 +137,42 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
             <div className="p-3 space-y-2">
                 {isEditing ? (
                     <div className="space-y-2">
-                        <textarea
-                            value={expression}
-                            onChange={(e) => {
-                                setExpression(e.target.value);
-                                setError(null);
-                            }}
-                            onDragOver={(e) => {
-                                e.preventDefault();
-                                e.dataTransfer.dropEffect = 'copy';
-                            }}
-                            onDrop={(e) => {
-                                e.preventDefault();
-                                const varName = e.dataTransfer.getData('application/reactflow/variable');
-                                if (varName) {
-                                    insertVariable(varName);
-                                }
-                            }}
-                            placeholder="e.g., A == HIGH && B == LOW"
-                            className={`w-full bg-gray-800 border rounded px-2 py-1 text-white text-xs font-mono h-16 focus:outline-none ${error ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-blue-400'
-                                }`}
-                            autoFocus
-                        />
+                        <div className="relative w-full h-16">
+                            {/* Ghost Text Layer */}
+                            <div
+                                className={`absolute inset-0 px-2 py-1 text-xs font-mono whitespace-pre-wrap break-all border border-transparent pointer-events-none bg-transparent`}
+                                aria-hidden="true"
+                            >
+                                <span className="opacity-0">{expression.slice(0, cursorPos)}</span>
+                                <span className="text-gray-500">{suggestion}</span>
+                                <span className="opacity-0">{expression.slice(cursorPos)}</span>
+                            </div>
+
+                            {/* Actual Textarea */}
+                            <textarea
+                                ref={textareaRef}
+                                value={expression}
+                                onChange={handleChange}
+                                onSelect={handleSelect}
+                                onKeyDown={handleKeyDown}
+                                onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'copy';
+                                }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    const varName = e.dataTransfer.getData('application/reactflow/variable');
+                                    if (varName) {
+                                        insertVariable(varName);
+                                    }
+                                }}
+                                placeholder="e.g., A == HIGH && B == LOW"
+                                className={`absolute inset-0 w-full h-full bg-transparent border rounded px-2 py-1 text-white text-xs font-mono focus:outline-none resize-none overflow-hidden ${error ? 'border-red-500 focus:border-red-500' : 'border-gray-600 focus:border-blue-400'
+                                    }`}
+                                autoFocus
+                                spellCheck={false}
+                            />
+                        </div>
 
                         {error && (
                             <div className="flex items-center gap-1 text-red-400 text-xs bg-red-900/20 p-1.5 rounded border border-red-900/50">
@@ -134,6 +216,7 @@ export const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
                                     setIsEditing(false);
                                     setError(null);
                                     setExpression(String(data.expression || ''));
+                                    setSuggestion('');
                                 }}
                                 className="px-2 py-1 text-gray-400 hover:text-white text-xs"
                             >

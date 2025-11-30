@@ -20,6 +20,19 @@ A powerful visual editor for designing, simulating, and verifying decision trees
 2.  Run `npm install` to install dependencies.
 3.  Run `npm run dev` to start the development server.
 
+## Building Desktop Application
+
+To build a standalone Windows executable:
+
+1.  Run `npm run electron:make` to build the application.
+2.  The executable will be generated in `out/DecisionTreeArchitect-win32-x64/DecisionTreeArchitect.exe`.
+3.  A ZIP distribution package will be created in `out/make/zip/win32/x64/`.
+
+### Development Mode
+
+*   Run `npm run electron:start` to start the Electron app in development mode.
+*   Run `npm run electron:package` to package the app without creating installers.
+
 ## Usage
 
 *   **Add Nodes**: Use the panel on the left or keyboard shortcuts (D for Decision, L for Leaf).

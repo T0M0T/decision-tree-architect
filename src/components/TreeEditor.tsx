@@ -17,9 +17,10 @@ import {
     useOnSelectionChange
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Plus, Trash2, X, Layout, Undo, Redo, HelpCircle, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, X, Layout, Undo, Redo, HelpCircle, CheckCircle, RefreshCw, ListOrdered } from 'lucide-react';
 import { exportStateToYAML, importStateFromYAML } from './ImportExport';
 import { useStore } from '../store/useStore';
+import { renumberNodes } from '../utils/renumbering';
 
 import { RootNode } from './nodes/RootNode';
 import { DecisionNode } from './nodes/DecisionNode';
@@ -235,7 +236,10 @@ const TreeEditor = () => {
         testCases,
         simulationResults,
         modelCheckerResults,
-        activeSimulationId
+        activeSimulationId,
+        setActiveSimulationId,
+        setSimulationResults,
+        setModelCheckerResults
     } = useStore();
 
     const { screenToFlowPosition, deleteElements, fitView } = useReactFlow();
@@ -243,7 +247,13 @@ const TreeEditor = () => {
     const [selectedEdges, setSelectedEdges] = useState<Edge[]>([]);
     const [showInspector, setShowInspector] = useState(true);
     const [showHelp, setShowHelp] = useState(false);
+    const [showClearConfirmation, setShowClearConfirmation] = useState(false);
     const [unreachableNodeIds, setUnreachableNodeIds] = useState<Set<string>>(new Set());
+
+    // Clear active simulation on mount
+    useEffect(() => {
+        setActiveSimulationId(null);
+    }, [setActiveSimulationId]);
 
     // History management
     const { takeSnapshot, undo, redo, canUndo, canRedo } = useHistory(initialNodes, []);
@@ -295,8 +305,8 @@ const TreeEditor = () => {
                 ...node,
                 style: {
                     ...node.style,
-                    opacity: isVisited ? 1 : 0.2,
-                    filter: isVisited ? 'none' : 'grayscale(100%)',
+                    opacity: isVisited ? 1 : 0.5,
+                    // filter: isVisited ? 'none' : 'grayscale(100%)', // Removed grayscale to keep colors visible
                     transition: 'all 0.3s ease'
                 }
             };
@@ -316,7 +326,7 @@ const TreeEditor = () => {
                     ...edge.style,
                     stroke: isVisited ? (edge.style?.stroke || '#b1b1b7') : '#4b5563',
                     strokeWidth: isVisited ? 3 : 1,
-                    opacity: isVisited ? 1 : 0.2,
+                    opacity: isVisited ? 1 : 0.4,
                 },
                 animated: isVisited,
             };
@@ -485,52 +495,93 @@ const TreeEditor = () => {
     }, [nodes, edges, setNodes, setEdges, fitView]);
 
     const getCenterPosition = useCallback(() => {
-        if (selectedNodes.length > 0) {
-            return { x: selectedNodes[0].position.x + 50, y: selectedNodes[0].position.y + 100 };
-        }
-        return { x: 250, y: 200 };
-    }, [selectedNodes]);
+        // Calculate center of the editor area (Sidebar: 320px, Header: 56px)
+        const x = 320 + (window.innerWidth - 320) / 2;
+        const y = 56 + (window.innerHeight - 56) / 2;
+
+        const flowPos = screenToFlowPosition({ x, y });
+
+        // Add random offset (-30 to +30) to avoid perfect overlap
+        return {
+            x: flowPos.x + (Math.random() * 60 - 30),
+            y: flowPos.y + (Math.random() * 60 - 30)
+        };
+    }, [screenToFlowPosition]);
+
+    const getNextNodeId = useCallback((prefix: string) => {
+        let maxId = 0;
+        nodes.forEach(node => {
+            const nodeId = node.data.nodeId as string;
+            if (nodeId && nodeId.startsWith(prefix)) {
+                const num = parseInt(nodeId.substring(prefix.length), 10);
+                if (!isNaN(num) && num > maxId) {
+                    maxId = num;
+                }
+            }
+        });
+        return `${prefix}${maxId + 1}`;
+    }, [nodes]);
 
     const addDecisionNode = useCallback(() => {
-        const id = `d_${Date.now()}`;
+        const nodeId = getNextNodeId('D');
         const pos = getCenterPosition();
         const newNode: Node = {
-            id,
+            id: nodeId, // Use readable ID as internal ID
             type: 'decision',
             position: pos,
             data: {
-                nodeId: `D${nodes.filter(n => n.type === 'decision').length + 1}`,
+                nodeId: nodeId,
                 label: 'New Decision',
                 expression: ''
             },
         };
         setNodes([...nodes, newNode]);
-    }, [nodes, setNodes, getCenterPosition]);
+    }, [nodes, setNodes, getCenterPosition, getNextNodeId]);
 
     const addLeafNode = useCallback(() => {
-        const id = `l_${Date.now()}`;
+        const nodeId = getNextNodeId('L');
         const pos = getCenterPosition();
         const newNode: Node = {
-            id,
+            id: nodeId, // Use readable ID as internal ID
             type: 'leaf',
             position: pos,
             data: {
-                nodeId: `L${nodes.filter(n => n.type === 'leaf').length + 1}`,
+                nodeId: nodeId,
                 label: 'New Result'
             },
         };
         setNodes([...nodes, newNode]);
-    }, [nodes, setNodes, getCenterPosition]);
+    }, [nodes, setNodes, getCenterPosition, getNextNodeId]);
 
     const handleDelete = useCallback(() => {
-        if (selectedNodes.length === 0) return;
+        if (selectedNodes.length === 0 && selectedEdges.length === 0) return;
 
         const nodesToDelete = selectedNodes.filter(n => n.type !== 'root');
-        if (nodesToDelete.length === 0) return;
 
-        deleteElements({ nodes: nodesToDelete });
-        setSelectedNodes([]);
-    }, [selectedNodes, deleteElements]);
+        if (nodesToDelete.length > 0 || selectedEdges.length > 0) {
+            deleteElements({ nodes: nodesToDelete, edges: selectedEdges });
+            setSelectedNodes([]);
+            setSelectedEdges([]);
+        }
+    }, [selectedNodes, selectedEdges, deleteElements]);
+
+    const handleClearAll = useCallback(() => {
+        setNodes(initialNodes);
+        setEdges([]);
+        setShowClearConfirmation(false);
+        takeSnapshot(initialNodes, []);
+    }, [setNodes, setEdges, takeSnapshot]);
+
+    const handleRenumber = useCallback(() => {
+        const { newNodes, newEdges, newModelCheckerResults, newSimulationResults } = renumberNodes(nodes, edges, modelCheckerResults, simulationResults);
+
+        setNodes(newNodes);
+        setEdges(newEdges);
+        setModelCheckerResults(newModelCheckerResults);
+        setSimulationResults(newSimulationResults);
+
+        takeSnapshot(newNodes, newEdges);
+    }, [nodes, edges, modelCheckerResults, simulationResults, setNodes, setEdges, setModelCheckerResults, setSimulationResults, takeSnapshot]);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -596,7 +647,7 @@ const TreeEditor = () => {
         };
     }, [addDecisionNode, addLeafNode, handleDelete, handleUndo, handleRedo, selectedNodes, setNodes, nodes]);
 
-    const canDelete = selectedNodes.length > 0 && selectedNodes.some(n => n.deletable !== false);
+    const canDelete = (selectedNodes.length > 0 && selectedNodes.some(n => n.deletable !== false)) || selectedEdges.length > 0;
 
     return (
         <div style={{ width: '100%', height: '100%' }}>
@@ -701,6 +752,25 @@ const TreeEditor = () => {
                             <Layout size={16} />
                             Auto Layout
                         </button>
+                        <button
+                            onClick={handleRenumber}
+                            className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition-colors border border-gray-600"
+                            title="Renumber Nodes"
+                        >
+                            <ListOrdered size={16} />
+                            Renumber
+                        </button>
+
+                        <div className="w-px bg-gray-600 mx-1" />
+
+                        <button
+                            onClick={() => setShowClearConfirmation(true)}
+                            className="flex items-center gap-2 px-3 py-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded text-sm font-medium transition-colors border border-red-800"
+                            title="Clear All"
+                        >
+                            <RefreshCw size={16} />
+                            Clear
+                        </button>
 
                         <div className="w-px bg-gray-600 mx-1" />
 
@@ -741,6 +811,31 @@ const TreeEditor = () => {
                             </div>
                         </div>
                     )}
+
+                    {showClearConfirmation && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
+                            <div className="bg-gray-800 border border-gray-600 rounded-lg p-6 max-w-sm w-full shadow-2xl">
+                                <h3 className="text-xl font-bold text-white mb-2">Clear All?</h3>
+                                <p className="text-gray-300 mb-6">
+                                    Are you sure you want to clear the entire decision tree? This action cannot be undone easily (though you can try Undo).
+                                </p>
+                                <div className="flex justify-end gap-3">
+                                    <button
+                                        onClick={() => setShowClearConfirmation(false)}
+                                        className="px-4 py-2 rounded text-gray-300 hover:bg-gray-700 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleClearAll}
+                                        className="px-4 py-2 rounded bg-red-600 hover:bg-red-500 text-white font-medium transition-colors"
+                                    >
+                                        Clear All
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </Panel>
                 {showInspector && (
                     <InspectorPanel
@@ -750,7 +845,7 @@ const TreeEditor = () => {
                     />
                 )}
             </ReactFlow>
-        </div>
+        </div >
     );
 };
 

@@ -23,7 +23,7 @@ export const LeafNode = memo(({ id, data, selected }: NodeProps) => {
                 <div className="absolute -top-3 -left-3 bg-gray-800 text-white text-xs font-bold px-2 py-0.5 rounded-full border border-gray-400 shadow-sm z-20">
                     {String(data.nodeId || id)}
                 </div>
-                {data.isUnreachable && (
+                {!!data.isUnreachable && (
                     <div className="absolute -top-3 -right-3 bg-red-900 text-red-200 p-1 rounded-full border border-red-500 shadow-sm z-30" title="Unreachable Node">
                         <AlertCircle size={14} />
                     </div>

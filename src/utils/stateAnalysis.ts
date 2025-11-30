@@ -1,5 +1,6 @@
 import { Node, Edge } from '@xyflow/react';
 import { Variable } from '../types';
+import { REGEX_COMPARISON } from './expressionUtils';
 
 export interface VariableState {
     possibleValues: Set<string>;
@@ -69,16 +70,11 @@ const applyExpression = (
 
     let newState = { ...state };
 
-    // Simple parser for "Var == Val" or "Var != Val"
-    // Regex to capture: Identifier Operator Value
-    // We assume variables don't have spaces, values might be quoted
-    // This is a basic heuristic parser
-
     // Split by && if Yes branch
     if (isYesBranch) {
         const parts = expression.split('&&');
         for (const part of parts) {
-            const eqMatch = part.match(/([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(==|!=)\s*(.+)/);
+            const eqMatch = part.match(REGEX_COMPARISON);
             if (eqMatch) {
                 const [, varName, op, val] = eqMatch;
                 newState = applyConstraint(newState, varName.trim(), op as '==' | '!=', val, variables);
@@ -90,7 +86,7 @@ const applyExpression = (
         // !(A != B) -> A == B
         // If expression has && or ||, we skip narrowing for safety (unless we implement De Morgan)
         if (!expression.includes('&&') && !expression.includes('||')) {
-            const eqMatch = expression.match(/([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(==|!=)\s*(.+)/);
+            const eqMatch = expression.match(REGEX_COMPARISON);
             if (eqMatch) {
                 const [, varName, op, val] = eqMatch;
                 // Invert operator

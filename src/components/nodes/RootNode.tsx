@@ -9,7 +9,7 @@ export const RootNode = memo(({ data, selected }: NodeProps) => {
             }`}>
             <div className="flex flex-col items-center gap-2 relative">
                 <div className="absolute -top-6 -left-6 bg-purple-900 text-white text-xs font-bold px-2 py-0.5 rounded-full border border-purple-400 shadow-sm z-20">
-                    {data.nodeId || 'R0'}
+                    {String(data.nodeId || 'R0')}
                 </div>
                 <div className="text-white font-bold text-lg">ROOT</div>
                 <div className="text-purple-200 text-xs">Decision Tree Start</div>
